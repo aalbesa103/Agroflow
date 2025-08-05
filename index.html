@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroFlow - Prototipo de App</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Roboto', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(to right, #e8f5e9, #f1f8e9);
+      color: #333;
+    }
+    header {
+      background: linear-gradient(to right, #66bb6a, #43a047);
+      color: white;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    header h1 {
+      margin: 0 0 0.5rem 0;
+      font-size: 2.5rem;
+    }
+    header p {
+      font-size: 1.2rem;
+      margin: 0;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+      padding: 2rem 1rem;
+    }
+    .pantalla {
+      width: 90%;
+      max-width: 360px;
+      border-radius: 16px;
+      background-color: #ffffff;
+      padding: 1.5rem;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
+    }
+    .pantalla:hover {
+      transform: translateY(-4px);
+    }
+    .pantalla h2 {
+      margin-top: 0;
+      color: #2e7d32;
+    }
+    .sem%C3%A1foro {
+      display: flex;
+      justify-content: space-evenly;
+      margin-top: 1rem;
+    }
+    .luz {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 2px solid #ccc;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+    }
+    .verde { background-color: #66bb6a; }
+    .amarillo { background-color: #ffee58; }
+    .rojo { background-color: #ef5350; }
+    img {
+      border-radius: 8px;
+      margin-top: 1rem;
+      width: 100%;
+    }
+    @media (min-width: 600px) {
+      main {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AgroFlow</h1>
+    <p>Monitoreo inteligente de agroquímicos</p>
+  </header>
+  <main>
+    <div class="pantalla">
+      <h2>1. Selección de Zona</h2>
+      <p>Seleccione el lote a trabajar desde el mapa.</p>
+      <img src="https://via.placeholder.com/300x150?text=Mapa+Zona" alt="Mapa zona">
+    </div><div class="pantalla">
+  <h2>2. Selección de Agroquímico</h2>
+  <p>Elija el producto a aplicar según cultivo y necesidad.</p>
+  <img src="https://via.placeholder.com/300x150?text=Lista+de+Productos" alt="Lista agroquímicos">
+</div>
+
+<div class="pantalla">
+  <h2>3. Comenzar</h2>
+  <p>Configuración inicial del monitoreo en marcha.</p>
+  <img src="https://via.placeholder.com/300x100?text=Preparando+Sensor" alt="Inicio sensor">
+</div>
+
+<div class="pantalla">
+  <h2>4. Indicador de Estado</h2>
+  <p>Semáforo de uso basado en condiciones actuales.</p>
+  <div class="sem%C3%A1foro">
+    <div class="luz verde"></div>
+    <div class="luz amarillo"></div>
+    <div class="luz rojo"></div>
+  </div>
+  <p>Color rojo = No es posible de momento<br><strong>Mensaje:</strong> "Cantidad recomendada excedida"</p>
+</div>
+
+<div class="pantalla">
+  <h2>5. Gráficos</h2>
+  <img src="https://via.placeholder.com/300x100?text=Gr%C3%A1fico+1" alt="Gráfico 1">
+  <img src="https://via.placeholder.com/300x100?text=Gr%C3%A1fico+2" alt="Gráfico 2">
+</div>
+
+  </main>
+</body>
+</html>

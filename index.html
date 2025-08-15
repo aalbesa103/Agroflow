@@ -1,126 +1,492 @@
-<!DOCTYPE html><html lang="es">
+<!DOCTYPE html>
+<html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgroFlow - Prototipo de App</title>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Roboto', sans-serif;
-      margin: 0;
-      padding: 0;
-      background: linear-gradient(to right, #e8f5e9, #f1f8e9);
-      color: #333;
-    }
-    header {
-      background: linear-gradient(to right, #66bb6a, #43a047);
-      color: white;
-      padding: 2rem;
-      text-align: center;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    header h1 {
-      margin: 0 0 0.5rem 0;
-      font-size: 2.5rem;
-    }
-    header p {
-      font-size: 1.2rem;
-      margin: 0;
-    }
-    main {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2rem;
-      padding: 2rem 1rem;
-    }
-    .pantalla {
-      width: 90%;
-      max-width: 360px;
-      border-radius: 16px;
-      background-color: #ffffff;
-      padding: 1.5rem;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      transition: transform 0.2s;
-    }
-    .pantalla:hover {
-      transform: translateY(-4px);
-    }
-    .pantalla h2 {
-      margin-top: 0;
-      color: #2e7d32;
-    }
-    .sem%C3%A1foro {
-      display: flex;
-      justify-content: space-evenly;
-      margin-top: 1rem;
-    }
-    .luz {
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      border: 2px solid #ccc;
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
-    }
-    .verde { background-color: #66bb6a; }
-    .amarillo { background-color: #ffee58; }
-    .rojo { background-color: #ef5350; }
-    img {
-      border-radius: 8px;
-      margin-top: 1rem;
-      width: 100%;
-    }
-    @media (min-width: 600px) {
-      main {
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroFlow - Prototipo con Simulación Acoplada</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to right, #e8f5e9, #f1f8e9);
+            color: #333;
+        }
+        header {
+            background: linear-gradient(to right, #66bb6a, #43a047);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { margin: 0 0 0.5rem 0; font-size: 2.5rem; }
+        header p { font-size: 1.2rem; margin: 0; }
+        main {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            padding: 2rem 1rem;
+        }
+        .pantalla {
+            width: 90%;
+            max-width: 420px;
+            border-radius: 16px;
+            background-color: #ffffff;
+            padding: 1.5rem;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .pantalla:hover { transform: translateY(-4px); }
+        .pantalla h2 { margin-top: 0; color: #2e7d32; }
+        #map, #risk-map-display {
+            height: 300px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 1rem;
+            background-color: #e5e7eb;
+        }
+        .selector-agroquimico {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #fafafa;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: #43a047;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        @media (min-width: 1536px) { /* Ancho para 3 gráficos */
+            main {
+                flex-direction: row;
+                flex-wrap: wrap;
+                justify-content: center;
+                align-items: flex-start;
+            }
+            .pantalla.graficos-triples {
+                max-width: 1300px; 
+            }
+        }
+    </style>
 </head>
 <body>
-  <header>
-    <h1>AgroFlow</h1>
-    <p>Monitoreo inteligente de agroquímicos</p>
-  </header>
-  <main>
-    <div class="pantalla">
-      <h2>1. Selección de Zona</h2>
-      <p>Seleccione el lote a trabajar desde el mapa.</p>
-      <img src="https://via.placeholder.com/300x150?text=Mapa+Zona" alt="Mapa zona">
-    </div><div class="pantalla">
-  <h2>2. Selección de Agroquímico</h2>
-  <p>Elija el producto a aplicar según cultivo y necesidad.</p>
-  <img src="https://via.placeholder.com/300x150?text=Lista+de+Productos" alt="Lista agroquímicos">
-</div>
+    <div id="loading-overlay" class="overlay">
+        <div class="spinner"></div>
+    </div>
+    <header>
+        <h1>AgroFlow</h1>
+        <p>Monitoreo inteligente de agroquímicos</p>
+    </header>
+    <main>
+        <div class="pantalla">
+            <h2>1. Selección de Zona</h2>
+            <p>Seleccione el lote a trabajar dibujando un polígono en el mapa.</p>
+            <div id="map"></div>
+            <div class="flex items-center justify-end space-x-2 mt-4">
+                <button id="undoBtn" disabled class="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-opacity-50 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center">Deshacer</button>
+                <button id="downloadBtn" disabled class="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg shadow hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center">Descargar</button>
+            </div>
+        </div>
+        <div class="pantalla">
+            <h2>2. Selección de Agroquímico</h2>
+            <p>Elija el producto para simular su transporte en el suelo.</p>
+            <select id="agrochemical-selector" class="selector-agroquimico">
+                <option value="" disabled selected>Seleccione un producto...</option>
+                <optgroup label="Herbicidas">
+                    <option value="glyphosate">Glifosato (Baja Movilidad)</option>
+                    <option value="atrazine">Atrazina (Movilidad Media)</option>
+                </optgroup>
+                <optgroup label="Insecticidas">
+                    <option value="chlorpyrifos">Clorpirifos (Muy Baja Movilidad)</option>
+                    <option value="imidacloprid">Imidacloprid (Alta Movilidad)</option>
+                </optgroup>
+                <optgroup label="Fertilizantes">
+                    <option value="ammonium_nitrate">Nitrato de Amonio (Muy Alta Movilidad)</option>
+                </optgroup>
+            </select>
+        </div>
+        <div class="pantalla">
+            <h2>3. Comenzar Simulación</h2>
+            <p>Presione para iniciar la simulación acoplada de flujo y transporte.</p>
+            <button id="startSimBtn" class="w-full mt-4 bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors">Comenzar Simulación</button>
+        </div>
+        <div class="pantalla">
+            <h2>4. Indicador de Riesgo de Lixiviación</h2>
+            <p>Visualización del riesgo en la zona seleccionada según la simulación.</p>
+            <div id="risk-map-display"><div class="h-full w-full flex items-center justify-center text-gray-500">Seleccione una zona en el mapa principal</div></div>
+            <div id="risk-status" class="text-center font-bold mt-2 text-lg">Estado: Pendiente</div>
+            <div class="text-xs text-center mt-1">Tiempo Transcurrido: <span id="sim-time-display">0.0</span> horas</div>
+        </div>
+        <div class="pantalla graficos-triples">
+            <h2>5. Resultados de la Simulación Acoplada</h2>
+            <p>Evolución de los perfiles en una columna de suelo de 100 cm.</p>
+            <div class="flex flex-col 2xl:flex-row gap-4 mt-4">
+                <div class="flex-1 min-w-0"><canvas id="pressure-chart"></canvas></div>
+                <div class="flex-1 min-w-0"><canvas id="moisture-chart"></canvas></div>
+                <div class="flex-1 min-w-0"><canvas id="solute-chart"></canvas></div>
+            </div>
+        </div>
+    </main>
 
-<div class="pantalla">
-  <h2>3. Comenzar</h2>
-  <p>Configuración inicial del monitoreo en marcha.</p>
-  <img src="https://via.placeholder.com/300x100?text=Preparando+Sensor" alt="Inicio sensor">
-</div>
+    <script id="simulation-worker" type="javascript/worker">
+        // --- SOLUCIONADOR NUMÉRICO (WEB WORKER) - FLUJO Y TRANSPORTE ACOPLADO ---
+        const soil_params = {
+            theta_r: 0.078, theta_s: 0.43, alpha: 0.036, n: 1.56,
+            K_s: 24.96 / (24 * 3600), l: 0.5
+        };
+        soil_params.m = 1.0 - 1.0 / soil_params.n;
 
-<div class="pantalla">
-  <h2>4. Indicador de Estado</h2>
-  <p>Semáforo de uso basado en condiciones actuales.</p>
-  <div class="sem%C3%A1foro">
-    <div class="luz verde"></div>
-    <div class="luz amarillo"></div>
-    <div class="luz rojo"></div>
-  </div>
-  <p>Color rojo = No es posible de momento<br><strong>Mensaje:</strong> "Cantidad recomendada excedida"</p>
-</div>
+        const agrochemicalParams = {
+            'glyphosate': { R: 15.0, mu: 1.8e-7 }, // R alto, degradación media
+            'atrazine': { R: 3.0, mu: 1.3e-7 },   // R medio, degradación lenta
+            'chlorpyrifos': { R: 50.0, mu: 2.7e-7 },// R muy alto, degradación rápida
+            'imidacloprid': { R: 1.5, mu: 6.7e-8 }, // R bajo, degradación muy lenta
+            'ammonium_nitrate': { R: 1.1, mu: 1e-9 } // Casi conservativo
+        };
+        
+        function calcular_theta(psi, params) { /* ... sin cambios ... */ 
+            const psi_neg = Math.min(psi, 0);
+            const Se = (1 + (params.alpha * Math.abs(psi_neg))**params.n)**(-params.m);
+            return params.theta_r + (params.theta_s - params.theta_r) * Se;
+        }
+        function calcular_K(psi, params) { /* ... sin cambios ... */ 
+            const psi_neg = Math.min(psi, 0);
+            const theta = calcular_theta(psi_neg, params);
+            let Se = (theta - params.theta_r) / (params.theta_s - params.theta_r);
+            Se = Math.max(1e-10, Math.min(Se, 1.0));
+            const Kr = Se**params.l * (1 - (1 - Se**(1/params.m))**params.m)**2;
+            return params.K_s * Kr;
+        }
+        function calcular_C(psi, params) { /* ... sin cambios ... */ 
+            const psi_neg = Math.min(psi, 0);
+            if (psi >= 0) return 1e-9;
+            const term1 = params.theta_s - params.theta_r;
+            const term2 = params.m * params.n * params.alpha;
+            const term3 = (params.alpha * Math.abs(psi_neg))**(params.n - 1);
+            const term4 = (1 + (params.alpha * Math.abs(psi_neg))**params.n)**(-params.m - 1);
+            return term1 * term2 * term3 * term4;
+        }
+        function thomasAlgorithm(a, b, c, d) { /* ... sin cambios ... */ 
+            const n = a.length;
+            const c_prime = new Array(n).fill(0), d_prime = new Array(n).fill(0), x = new Array(n).fill(0);
+            c_prime[0] = c[0] / b[0];
+            d_prime[0] = d[0] / b[0];
+            for (let i = 1; i < n; i++) {
+                const m = 1.0 / (b[i] - a[i] * c_prime[i-1]);
+                c_prime[i] = c[i] * m;
+                d_prime[i] = (d[i] - a[i] * d_prime[i-1]) * m;
+            }
+            x[n-1] = d_prime[n-1];
+            for (let i = n - 2; i >= 0; i--) {
+                x[i] = d_prime[i] - c_prime[i] * x[i+1];
+            }
+            return x;
+        }
+        
+        self.onmessage = function(e) {
+            const { chemicalKey } = e.data;
+            const solute_params = {
+                D_m: 1e-5, alpha_L: 1.0, 
+                R: agrochemicalParams[chemicalKey].R,
+                mu: agrochemicalParams[chemicalKey].mu
+            };
 
-<div class="pantalla">
-  <h2>5. Gráficos</h2>
-  <img src="https://via.placeholder.com/300x100?text=Gr%C3%A1fico+1" alt="Gráfico 1">
-  <img src="https://via.placeholder.com/300x100?text=Gr%C3%A1fico+2" alt="Gráfico 2">
-</div>
+            const L = 100.0, Nx = 101, dz = L / (Nx - 1);
+            const T_final = 3600 * 6, plot_interval = 3600;
+            let dt = 20.0, tiempo_total = 0.0;
+            const max_iter_picard = 30, tol_picard = 1e-6;
 
-  </main>
+            let h = new Array(Nx).fill(-400.0);
+            let C = new Array(Nx).fill(0.0);
+            const h_top = -1.0, C_top = 1.0;
+
+            self.postMessage({ type: 'progress', time: 0.0, hProfile: [...h], CProfile: [...C] });
+            let time_to_plot = plot_interval;
+
+            while (tiempo_total < T_final) {
+                // --- PASO 1: RESOLVER RICHARDS ---
+                const h_n = [...h];
+                let h_m = [...h];
+                let iter_count;
+                for (iter_count = 1; iter_count <= max_iter_picard; iter_count++) {
+                    const h_prev_iter = [...h_m];
+                    const K_m = h_m.map(val => calcular_K(val, soil_params));
+                    const C_m = h_m.map(val => calcular_C(val, soil_params));
+                    const theta_m = h_m.map(val => calcular_theta(val, soil_params));
+                    const K_face = new Array(Nx - 1).fill(0).map((_, i) => (K_m[i] + K_m[i+1]) / 2.0);
+                    const A_h_diag = new Array(Nx).fill(0), A_h_upper = new Array(Nx).fill(0), A_h_lower = new Array(Nx).fill(0), b_h = new Array(Nx).fill(0);
+                    for (let i = 1; i < Nx - 1; i++) {
+                        A_h_lower[i] = -K_face[i-1] / dz**2;
+                        A_h_diag[i]  = C_m[i] / dt + (K_face[i] + K_face[i-1]) / dz**2;
+                        A_h_upper[i] = -K_face[i] / dz**2;
+                        b_h[i] = C_m[i] * h_n[i] / dt + (K_face[i] - K_face[i-1]) / (dz); // Corrección del término gravitacional
+                    }
+                    A_h_diag[Nx-1] = 1.0; b_h[Nx-1] = h_top;
+                    A_h_diag[0] = 1.0; A_h_upper[0] = -1.0; b_h[0] = 0.0; // Drenaje libre d(h)/dz=0
+                    h = thomasAlgorithm(A_h_lower, A_h_diag, A_h_upper, b_h);
+                    h_m = [...h];
+                    if (Math.sqrt(h_m.reduce((s, v, i) => s + (v - h_prev_iter[i])**2, 0)) < tol_picard) break;
+                }
+                if (iter_count > max_iter_picard) { dt /= 2.0; h = [...h_n]; continue; }
+
+                // --- PASO 2: RESOLVER ADV-DISP ---
+                const theta = h.map(val => calcular_theta(val, soil_params));
+                const K = h.map(val => calcular_K(val, soil_params));
+                const q_face = new Array(Nx - 1).fill(0).map((_, i) => -(K[i] + K[i+1])/2.0 * ((h[i+1] - h[i])/dz + 1.0));
+                const v_face = q_face.map((q, i) => q / ((theta[i] + theta[i+1])/2.0));
+                const D_face = v_face.map(v => solute_params.alpha_L * Math.abs(v) + solute_params.D_m);
+                
+                const Ac_diag = new Array(Nx).fill(0), Ac_upper = new Array(Nx).fill(0), Ac_lower = new Array(Nx).fill(0), bc = new Array(Nx).fill(0);
+                const C_n = [...C];
+
+                for (let i = 1; i < Nx - 1; i++) {
+                    const adv_up = Math.max(q_face[i], 0);
+                    const adv_down = -Math.min(q_face[i-1], 0);
+                    const disp_up = theta[i+1] * D_face[i] / dz;
+                    const disp_down = theta[i-1] * D_face[i-1] / dz;
+
+                    Ac_lower[i] = -adv_down - disp_down;
+                    Ac_diag[i] = theta[i] * solute_params.R / dt + adv_up - Math.min(q_face[i], 0) + adv_down + Math.max(q_face[i-1], 0) + disp_up + disp_down + theta[i] * solute_params.mu * solute_params.R;
+                    Ac_upper[i] = adv_up - disp_up;
+
+                    bc[i] = theta[i] * solute_params.R * C_n[i] / dt;
+                }
+                Ac_diag[Nx-1] = 1.0; bc[Nx-1] = C_top;
+                Ac_diag[0] = 1.0; Ac_upper[0] = -1.0; bc[0] = 0.0;
+                
+                C = thomasAlgorithm(Ac_lower, Ac_diag, Ac_upper, bc);
+
+                tiempo_total += dt;
+                if (iter_count < 5 && dt < 100.0) dt *= 1.1;
+                if (tiempo_total >= time_to_plot) {
+                    self.postMessage({ type: 'progress', time: tiempo_total / 3600, hProfile: [...h], CProfile: [...C] });
+                    time_to_plot += plot_interval;
+                }
+            }
+            self.postMessage({ type: 'done' });
+        }
+    </script>
+
+    <script>
+        // --- LÓGICA DE LA INTERFAZ (HILO PRINCIPAL) ---
+        let map, riskMap;
+        let drawingManager;
+        let selectedShape = null, riskPolygon = null;
+        const downloadBtn = document.getElementById('downloadBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const startSimBtn = document.getElementById('startSimBtn');
+        const overlay = document.getElementById('loading-overlay');
+        const simTimeDisplay = document.getElementById('sim-time-display');
+        const riskStatus = document.getElementById('risk-status');
+        
+        const pressureCanvas = document.getElementById('pressure-chart');
+        const moistureCanvas = document.getElementById('moisture-chart');
+        const soluteCanvas = document.getElementById('solute-chart');
+        let pressureChart, moistureChart, soluteChart;
+        
+        const soil_params = {
+            theta_r: 0.078, theta_s: 0.43, alpha: 0.036, n: 1.56,
+        };
+        soil_params.m = 1.0 - 1.0 / soil_params.n;
+
+        function calcular_theta_main(psi, params) {
+            const psi_neg = Math.min(psi, 0);
+            const Se = (1 + (params.alpha * Math.abs(psi_neg))**params.n)**(-params.m);
+            return params.theta_r + (params.theta_s - params.theta_r) * Se;
+        }
+
+        function initializeCharts() {
+            if (pressureChart) pressureChart.destroy();
+            if (moistureChart) moistureChart.destroy();
+            if (soluteChart) soluteChart.destroy();
+            
+            const z_nodes = Array.from({length: 101}, (_, i) => i * 100.0 / 100.0);
+            const chartOptions = (xlabel, xlim = null) => {
+                const options = {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { x: { title: { display: true, text: xlabel } }, y: { title: { display: true, text: 'Profundidad, z [cm]' }, reverse: true } }
+                };
+                if (xlim) {
+                    options.scales.x.min = xlim[0]; 
+                    options.scales.x.max = xlim[1];
+                }
+                return options;
+            };
+
+            pressureChart = new Chart(pressureCanvas, { type: 'line', data: { labels: z_nodes, datasets: [] }, options: chartOptions('Carga de Presión, ψ [cm]') });
+            moistureChart = new Chart(moistureCanvas, { type: 'line', data: { labels: z_nodes, datasets: [] }, options: chartOptions('Contenido de Humedad, θ [cm³/cm³]', [soil_params.theta_r - 0.02, soil_params.theta_s + 0.02]) });
+            soluteChart = new Chart(soluteCanvas, { type: 'line', data: { labels: z_nodes, datasets: [] }, options: chartOptions('Concentración Normalizada', [-0.1, 1.1]) });
+        }
+
+        initializeCharts();
+        
+        startSimBtn.addEventListener('click', () => {
+            const selector = document.getElementById('agrochemical-selector');
+            if (!selector.value) { showMessageBox("Por favor, seleccione un agroquímico primero."); return; }
+            if (!selectedShape) { showMessageBox("Por favor, seleccione una zona en el mapa primero."); return; }
+
+            overlay.style.display = 'flex';
+            startSimBtn.disabled = true;
+            initializeCharts();
+            updateRiskMap('rgba(200, 200, 200, 0.8)', 'Estado: Calculando...');
+
+            const workerBlob = new Blob([document.getElementById('simulation-worker').textContent], { type: "text/javascript" });
+            const worker = new Worker(window.URL.createObjectURL(workerBlob));
+            
+            worker.postMessage({ chemicalKey: selector.value });
+
+            const colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2'];
+
+            worker.onmessage = function(e) {
+                if (e.data.type === 'progress') {
+                    simTimeDisplay.textContent = e.data.time.toFixed(1);
+                    const time = e.data.time;
+                    const hProfile = e.data.hProfile;
+                    const CProfile = e.data.CProfile;
+                    const thetaProfile = hProfile.map(h => calcular_theta_main(h, soil_params));
+                    const color = colors[pressureChart.data.datasets.length % colors.length];
+
+                    const addDataset = (chart, data) => {
+                        chart.data.datasets.push({ label: `t = ${time.toFixed(1)} h`, data, borderColor: color, fill: false, pointRadius: 0, borderWidth: 2 });
+                    };
+                    addDataset(pressureChart, hProfile);
+                    addDataset(moistureChart, thetaProfile);
+                    addDataset(soluteChart, CProfile);
+                    
+                    pressureChart.update(); moistureChart.update(); soluteChart.update();
+
+                    const concentration = CProfile[0];
+                    let riskColor = '#4caf50'; let riskText = 'Riesgo: Bajo';
+                    if (concentration >= 0.4) { riskColor = '#ef4444'; riskText = 'Riesgo: Alto'; }
+                    else if (concentration >= 0.05) { riskColor = '#f59e0b'; riskText = 'Riesgo: Moderado'; }
+                    updateRiskMap(riskColor, riskText);
+
+                } else if (e.data.type === 'done') {
+                    overlay.style.display = 'none';
+                    startSimBtn.disabled = false;
+                    worker.terminate();
+                }
+            };
+        });
+
+        function initMap() { /* ... sin cambios ... */ 
+            const initialCoords = { lat: -34.921, lng: -57.954 };
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: initialCoords, zoom: 12, mapTypeId: 'satellite',
+                streetViewControl: false, mapTypeControlOptions: { style: google.maps.MapTypeControlStyle.DROPDOWN_MENU },
+            });
+            riskMap = new google.maps.Map(document.getElementById('risk-map-display'), {
+                center: initialCoords, zoom: 12, mapTypeId: 'satellite',
+                disableDefaultUI: true, draggable: false, zoomControl: false, scrollwheel: false, disableDoubleClickZoom: true
+            });
+            drawingManager = new google.maps.drawing.DrawingManager({
+                drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                drawingControl: true,
+                drawingControlOptions: { position: google.maps.ControlPosition.TOP_CENTER, drawingModes: ['polygon'] },
+                polygonOptions: { fillColor: '#4A90E2', fillOpacity: 0.5, strokeWeight: 2, strokeColor: '#FFFFFF', clickable: true, editable: true, zIndex: 1 },
+            });
+            drawingManager.setMap(map);
+            google.maps.event.addListener(drawingManager, 'polygoncomplete', (polygon) => {
+                if (selectedShape) selectedShape.setMap(null);
+                selectedShape = polygon;
+                updateRiskPolygon(polygon.getPath());
+                downloadBtn.disabled = false;
+                undoBtn.disabled = false;
+                drawingManager.setDrawingMode(null);
+                polygon.getPath().addListener('set_at', () => updateRiskPolygon(polygon.getPath()));
+                polygon.getPath().addListener('insert_at', () => updateRiskPolygon(polygon.getPath()));
+            });
+            google.maps.event.addListener(drawingManager, 'drawingmode_changed', () => {
+                 if (drawingManager.getDrawingMode() !== null) clearSelection();
+            });
+        }
+        function updateRiskPolygon(path) { /* ... sin cambios ... */ 
+            if (riskPolygon) riskPolygon.setMap(null);
+            riskPolygon = new google.maps.Polygon({
+                paths: path, strokeColor: '#FFFFFF', strokeOpacity: 0.8, strokeWeight: 2,
+                fillColor: '#808080', fillOpacity: 0.5,
+            });
+            riskPolygon.setMap(riskMap);
+            const bounds = new google.maps.LatLngBounds();
+            path.getArray().forEach(latLng => bounds.extend(latLng));
+            riskMap.fitBounds(bounds);
+        }
+        function clearSelection() { /* ... sin cambios ... */ 
+            if (selectedShape) { selectedShape.setMap(null); selectedShape = null; }
+            if (riskPolygon) { riskPolygon.setMap(null); riskPolygon = null; }
+            updateRiskMap('#e5e7eb', 'Estado: Pendiente');
+            const placeholder = document.querySelector('#risk-map-display div');
+            if(placeholder) placeholder.style.display = 'flex';
+            downloadBtn.disabled = true; undoBtn.disabled = true;
+        }
+        function updateRiskMap(color, text) { /* ... sin cambios ... */ 
+            riskStatus.textContent = text;
+            if (riskPolygon) {
+                riskPolygon.setOptions({ fillColor: color, fillOpacity: 0.6 });
+            }
+            if (text.includes("Bajo")) riskStatus.style.color = '#2e7d32';
+            else if (text.includes("Moderado")) riskStatus.style.color = '#f59e0b';
+            else if (text.includes("Alto")) riskStatus.style.color = '#ef4444';
+            else riskStatus.style.color = '#333';
+        }
+        function downloadCoordinates() { /* ... sin cambios ... */ 
+            if (!selectedShape) { showMessageBox("Por favor, dibuja un polígono en el mapa primero."); return; }
+            const path = selectedShape.getPath();
+            const coordinates = [];
+            for (let i = 0; i < path.getLength(); i++) {
+                const vertex = path.getAt(i);
+                coordinates.push([vertex.lng(), vertex.lat()]);
+            }
+            if (coordinates.length > 0) coordinates.push([path.getAt(0).lng(), path.getAt(0).lat()]);
+            const geoJsonData = { "type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": {"type": "Polygon", "coordinates": [coordinates]}}]};
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geoJsonData, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "coordenadas_seleccion.geojson");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+        function showMessageBox(message) { /* ... sin cambios ... */ 
+            const box = document.createElement('div');
+            box.textContent = message;
+            Object.assign(box.style, { position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'white', padding: '16px 24px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', zIndex: '1000', color: '#333' });
+            document.body.appendChild(box);
+            setTimeout(() => box.remove(), 3000);
+        }
+        downloadBtn.addEventListener('click', downloadCoordinates);
+        undoBtn.addEventListener('click', clearSelection);
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCWnFvt9RuvfJT3ZkiqoNFJKNLxT_qLmSo&libraries=drawing&callback=initMap"></script>
 </body>
 </html>
+```
+
+He hecho algunos cambios. Corregí un error en la lógica de los gráficos que causaba que la aplicación fallara al iniciar

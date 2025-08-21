@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroFlow v2.0 - Simulación por Ambientes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7fafc;
+            color: #2d3748;
+        }
+        header {
+            background: linear-gradient(to right, #48bb78, #38a169);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        header h1 { margin: 0 0 0.5rem 0; font-size: 2.5rem; }
+        header p { font-size: 1.2rem; margin: 0; }
+        main {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+            align-items: flex-start;
+        }
+        .pantalla {
+            border-radius: 12px;
+            background-color: #ffffff;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .pantalla:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
+        .pantalla h2 { margin-top: 0; color: #2f855a; border-bottom: 2px solid #c6f6d5; padding-bottom: 0.5rem; }
+        .pantalla h3 { margin-top: 1rem; color: #38a169; }
+
+        #map, #risk-map-display {
+            height: 300px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 1rem;
+            background-color: #e2e8f0;
+        }
+        .form-label { font-weight: bold; color: #4a5568; margin-bottom: 0.5rem; display: block; }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            background-color: #fdfdfe;
+            font-size: 1rem;
+        }
+        .btn {
+            color: white; font-weight: bold; padding: 0.75rem 1rem;
+            border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: background-color 0.2s; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 0.5rem;
+        }
+        .btn:disabled { background-color: #a0aec0; cursor: not-allowed; }
+        .btn-primary { background-color: #38a169; } .btn-primary:hover:not(:disabled) { background-color: #2f855a; }
+        .btn-secondary { background-color: #4299e1; } .btn-secondary:hover:not(:disabled) { background-color: #3182ce; }
+        .btn-warning { background-color: #ed8936; } .btn-warning:hover:not(:disabled) { background-color: #dd6b20; }
+        
+        #zone-list .zone-item, #event-list .event-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 0.5rem;
+        }
+        #zone-list .zone-item.active { background-color: #ebf8ff; border-color: #90cdf4; }
+        .remove-btn { color: #e53e3e; cursor: pointer; font-weight: bold; }
+
+        .spinner { /* ... sin cambios ... */ }
+        .overlay { /* ... sin cambios ... */ }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay" class="overlay">
+        <div class="flex flex-col items-center">
+            <div class="spinner"></div>
+            <p id="loading-text" class="text-white mt-4 text-lg">Calculando simulaciones...</p>
+        </div>
+    </div>
+    <header>
+        <h1>AgroFlow 2.0</h1>
+        <p>Simulación Predictiva de Transporte por Ambientes</p>
+    </header>
+    <main>
+        <div class="pantalla" style="grid-column: 1 / -1; max-width: 1600px; margin: auto;">
+            <div class="flex flex-wrap gap-8">
+                <div class="flex-grow" style="min-width: 350px;">
+                    <h2>1. Selección de Lote y Ambientes</h2>
+                    <p class="text-gray-600 text-sm">Dibuje uno o más polígonos para definir los ambientes de su lote.</p>
+                    <div id="map"></div>
+                    <div class="flex items-center justify-end space-x-2 mt-4">
+                        <button id="clearBtn" class="btn btn-warning">Limpiar Todo</button>
+                    </div>
+                </div>
+                <div class="flex-grow" style="min-width: 350px;">
+                    <h2>2. Parametrización de Ambientes</h2>
+                    <p class="text-gray-600 text-sm">Asigne un tipo de suelo a cada ambiente definido.</p>
+                    <div id="zone-list" class="mt-4 max-h-80 overflow-y-auto">
+                        <p class="text-gray-500 text-center">Dibuje en el mapa para comenzar.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pantalla">
+            <h2>3. Definición del Escenario</h2>
+            <div>
+                <label for="initial-condition" class="form-label">Condición Inicial de Humedad:</label>
+                <select id="initial-condition" class="form-select">
+                    <option value="-600">Seco (ψ = -600 cm)</option>
+                    <option value="-150">Húmedo (ψ = -150 cm)</option>
+                    <option value="-50">Capacidad de Campo (ψ = -50 cm)</option>
+                </select>
+            </div>
+            <div class="mt-4">
+                <label class="form-label">Eventos de Lluvia / Riego:</label>
+                <div id="event-list"></div>
+                <button id="addEventBtn" class="btn btn-secondary mt-2 text-sm">Agregar Evento Hídrico</button>
+            </div>
+             <div class="mt-4">
+                <label for="app-time" class="form-label">Momento de Aplicación (horas después del inicio):</label>
+                <input type="number" id="app-time" class="form-input" value="1" min="0">
+            </div>
+        </div>
+
+        <div class="pantalla">
+            <h2>4. Selección y Simulación</h2>
+            <div>
+                <label for="agrochemical-selector" class="form-label">Seleccione el Agroquímico:</label>
+                <select id="agrochemical-selector" class="form-select">
+                    <option value="" disabled selected>Seleccione un producto...</option>
+                    <optgroup label="Herbicidas">
+                        <option value="glyphosate">Glifosato</option>
+                        <option value="atrazine">Atrazina</option>
+                    </optgroup>
+                    <optgroup label="Insecticidas">
+                        <option value="chlorpyrifos">Clorpirifos</option>
+                        <option value="imidacloprid">Imidacloprid</option>
+                    </optgroup>
+                    <optgroup label="Fertilizantes">
+                        <option value="nitrate">Nitrato (como trazador)</option>
+                    </optgroup>
+                </select>
+            </div>
+            <button id="startSimBtn" class="w-full mt-6 btn btn-primary text-lg">Comenzar Simulación</button>
+        </div>
+
+        <div class="pantalla" style="grid-column: 1 / -1; max-width: 1600px; margin: auto;">
+             <h2>5. Resultados de la Simulación</h2>
+             <div class="flex flex-wrap gap-8">
+                <div class="flex-grow" style="min-width: 350px;">
+                    <h3>Mapa de Riesgo de Lixiviación</h3>
+                    <p class="text-gray-600 text-sm">Haga clic en una zona para ver el detalle. El riesgo se basa en la concentración de soluto que alcanza los 100 cm de profundidad al final de la simulación.</p>
+                    <div id="risk-map-display"></div>
+                </div>
+                <div class="flex-grow" style="min-width: 350px;">
+                    <h3>Dashboard de Resultados</h3>
+                    <p id="dashboard-subtitle" class="text-gray-600 text-sm">Seleccione un ambiente en el mapa para ver su análisis.</p>
+                    <div id="summary-panel" class="mt-4 p-4 bg-gray-50 rounded-lg min-h-80">
+                         <p class="text-gray-500 text-center">Esperando selección...</p>
+                    </div>
+                </div>
+             </div>
+        </div>
+        
+        <div class="pantalla" style="grid-column: 1 / -1; max-width: 1600px; margin: auto;">
+            <h2 id="charts-title">Perfiles de Simulación (Columna de 150 cm)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4" style="height: 400px;">
+                <canvas id="pressure-chart"></canvas>
+                <canvas id="moisture-chart"></canvas>
+                <canvas id="solute-chart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script id="simulation-worker" type="javascript/worker">
+        // --- MOTOR DE SIMULACIÓN (WEB WORKER) ---
+
+        const soilDatabase = {
+            'arena': { theta_r: 0.045, theta_s: 0.43, alpha: 0.145, n: 2.68, K_s: 712.8, f_oc: 0.005, rho_b: 1.60 },
+            'franco_arenoso': { theta_r: 0.065, theta_s: 0.41, alpha: 0.075, n: 1.89, K_s: 106.1, f_oc: 0.01, rho_b: 1.50 },
+            'franco': { theta_r: 0.078, theta_s: 0.43, alpha: 0.036, n: 1.56, K_s: 24.96, f_oc: 0.015, rho_b: 1.45 },
+            'franco_limoso': { theta_r: 0.067, theta_s: 0.45, alpha: 0.020, n: 1.41, K_s: 10.80, f_oc: 0.02, rho_b: 1.40 },
+            'franco_arcilloso': { theta_r: 0.089, theta_s: 0.41, alpha: 0.027, n: 1.59, K_s: 5.28, f_oc: 0.025, rho_b: 1.35 },
+            'arcilla': { theta_r: 0.068, theta_s: 0.38, alpha: 0.008, n: 1.09, K_s: 4.80, f_oc: 0.03, rho_b: 1.30 },
+        };
+        
+        const agrochemicalDatabase = {
+            'glyphosate': { Koc: 24000, t_half_days: 47, name: 'Glifosato' },
+            'atrazine': { Koc: 100, t_half_days: 60, name: 'Atrazina' },
+            'chlorpyrifos': { Koc: 6070, t_half_days: 30, name: 'Clorpirifos' },
+            'imidacloprid': { Koc: 310, t_half_days: 100, name: 'Imidacloprid' },
+            'nitrate': { Koc: 0.1, t_half_days: 1e6, name: 'Nitrato' }, // Prácticamente no se adsorbe ni degrada
+        };
+
+        function calculate_solute_params(chemKey, soilParams) {
+            const chem = agrochemicalDatabase[chemKey];
+            const Kd = chem.Koc * soilParams.f_oc;
+            const R = 1 + (soilParams.rho_b / soilParams.theta_s) * Kd; // Simplificado con theta_s
+            const mu = Math.log(2) / (chem.t_half_days * 24 * 3600);
+            return { R, mu, name: chem.name };
+        }
+
+        function run_simulation_for_zone(zone, scenario) {
+            // ... (El código del solucionador numérico es extenso y se omite por brevedad,
+            // pero internamente haría lo siguiente):
+            // 1. Obtiene los parámetros del suelo del 'soilDatabase' usando zone.soilType
+            const soilParams = soilDatabase[zone.soilType];
+            soilParams.m = 1.0 - 1.0 / soilParams.n;
+            soilParams.K_s /= (24*3600); // cm/day a cm/s
+
+            // 2. Calcula los parámetros del soluto específicos para este suelo
+            const soluteParams = calculate_solute_params(scenario.chemicalKey, soilParams);
+
+            // 3. Inicializa los vectores de estado (h, C) basados en 'initialPsi'
+            const L = 150.0, Nx = 151, dz = L / (Nx - 1);
+            let h = new Array(Nx).fill(scenario.initialPsi);
+            let C = new Array(Nx).fill(0.0);
+            
+            // 4. Inicia el bucle temporal
+            let tiempo_total = 0.0;
+            const T_final = 3600 * 48; // Simula 48 horas
+            let dt = 10.0;
+            const plot_interval = 3600 * 2;
+            let time_to_plot = 0;
+            const results = { h: [], C: [], times: [] };
+            
+            while (tiempo_total < T_final) {
+                 // 5. Determina las condiciones de contorno para el paso actual
+                 let h_top = -1000.0; // No-flujo por defecto
+                 let C_top = 0.0;
+
+                 // Chequea si hay un evento de lluvia/riego activo
+                 const activeEvent = scenario.waterEvents.find(evt => tiempo_total >= evt.time && tiempo_total < evt.time + evt.duration);
+                 if (activeEvent) {
+                     h_top = 0.0; // Encharcamiento
+                 }
+
+                 // Chequea si es el momento de la aplicación del agroquímico
+                 if(tiempo_total >= scenario.appTime && tiempo_total < scenario.appTime + 3600) { // Aplicación por 1 hora
+                     C_top = 1.0;
+                 }
+                
+                // --- AQUÍ IRÍA EL SOLUCIONADOR NUMÉRICO DETALLADO ---
+                // (Iteraciones de Picard para Richards, seguido por la solución de Adv-Disp)
+                // Se simula un resultado para este prototipo
+                for (let i = 0; i < Nx; i++) {
+                    const depth = i * dz;
+                    // Simular frente de humedad que avanza
+                    const front_h = tiempo_total * 0.005;
+                    h[i] = (depth < front_h) ? Math.max(-depth, -150) : scenario.initialPsi;
+
+                    // Simular pulso de soluto que se mueve y dispersa
+                    const peak_z = (tiempo_total - scenario.appTime) * (soilParams.K_s * 10) / soluteParams.R;
+                    const spread = 15 + tiempo_total * 0.001;
+                    if (peak_z > 0) {
+                        C[i] = Math.exp(-0.5 * ((depth - peak_z) / spread) ** 2);
+                    } else {
+                        C[i] = 0;
+                    }
+                }
+                // --- FIN DE LA SIMULACIÓN SIMPLIFICADA ---
+                
+                 if (tiempo_total >= time_to_plot) {
+                    results.h.push([...h]);
+                    results.C.push([...C]);
+                    results.times.push(tiempo_total / 3600);
+                    time_to_plot += plot_interval;
+                 }
+
+                 tiempo_total += dt;
+                 // Lógica adaptativa de dt (no mostrada)
+            }
+             
+            // 6. Calcula métricas finales y empaqueta los resultados
+            const final_C_profile = results.C[results.C.length-1];
+            const risk_value = final_C_profile[Nx-1]; // Concentración en el fondo
+            
+            const mass_in_profile = final_C_profile.reduce((sum, val) => sum + val, 0) * dz;
+            const peak_depth = final_C_profile.indexOf(Math.max(...final_C_profile)) * dz;
+
+            self.postMessage({
+                type: 'result',
+                zoneId: zone.id,
+                results: results,
+                summary: {
+                    risk_value: risk_value,
+                    soilType: zone.soilType,
+                    soluteName: soluteParams.name,
+                    peak_depth: peak_depth,
+                    mass_in_profile: mass_in_profile,
+                    R: soluteParams.R
+                }
+            });
+        }
+
+        self.onmessage = function(e) {
+            const { zones, scenario } = e.data;
+            zones.forEach((zone, index) => {
+                self.postMessage({ type: 'progress', text: `Simulando Ambiente ${index + 1}/${zones.length} (${zone.soilType})...` });
+                run_simulation_for_zone(zone, scenario);
+            });
+            self.postMessage({ type: 'done' });
+        }
+    </script>
+
+    <script>
+        // --- LÓGICA DE LA INTERFAZ (HILO PRINCIPAL) ---
+        let map, riskMap, drawingManager;
+        let zones = [], riskPolygons = {};
+        let simulationResults = {};
+        let selectedZoneId = null;
+        let waterEvents = [];
+        let eventCounter = 0;
+
+        const soilTypes = {
+            'arena': 'Arena', 'franco_arenoso': 'Franco Arenoso', 'franco': 'Franco',
+            'franco_limoso': 'Franco Limoso', 'franco_arcilloso': 'Franco Arcilloso', 'arcilla': 'Arcilla'
+        };
+
+        // --- INICIALIZACIÓN Y MANEJO DE MAPAS ---
+        function initMap() {
+            const initialCoords = { lat: -34.921, lng: -57.954 };
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: initialCoords, zoom: 14, mapTypeId: 'satellite'
+            });
+            riskMap = new google.maps.Map(document.getElementById('risk-map-display'), {
+                center: initialCoords, zoom: 14, mapTypeId: 'satellite', disableDefaultUI: true
+            });
+            drawingManager = new google.maps.drawing.DrawingManager({
+                drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                drawingControl: true, drawingControlOptions: { position: google.maps.ControlPosition.TOP_CENTER, drawingModes: ['polygon'] },
+                polygonOptions: { fillColor: '#4299e1', fillOpacity: 0.5, strokeWeight: 2, strokeColor: '#FFFFFF', editable: true, zIndex: 1 },
+            });
+            drawingManager.setMap(map);
+            google.maps.event.addListener(drawingManager, 'polygoncomplete', onPolygonComplete);
+        }
+
+        function onPolygonComplete(polygon) {
+            const id = `zone_${new Date().getTime()}`;
+            polygon.id = id;
+            zones.push({ id: id, shape: polygon, soilType: 'franco' });
+            
+            google.maps.event.addListener(polygon.getPath(), 'set_at', () => syncRiskMap());
+            google.maps.event.addListener(polygon.getPath(), 'insert_at', () => syncRiskMap());
+
+            renderZoneList();
+            syncRiskMap();
+            drawingManager.setDrawingMode(null);
+        }
+        
+        function syncRiskMap() {
+            Object.values(riskPolygons).forEach(p => p.setMap(null));
+            riskPolygons = {};
+            const bounds = new google.maps.LatLngBounds();
+
+            zones.forEach(zone => {
+                const path = zone.shape.getPath();
+                const riskPolygon = new google.maps.Polygon({
+                    paths: path,
+                    strokeColor: '#FFFFFF', strokeOpacity: 0.8, strokeWeight: 2,
+                    fillColor: '#A0AEC0', fillOpacity: 0.6,
+                    map: riskMap
+                });
+                riskPolygon.id = zone.id;
+                google.maps.event.addListener(riskPolygon, 'click', () => displayZoneResults(zone.id));
+                riskPolygons[zone.id] = riskPolygon;
+                path.getArray().forEach(latLng => bounds.extend(latLng));
+            });
+
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds);
+                riskMap.fitBounds(bounds);
+            }
+        }
+
+        // --- RENDERIZADO DE LA UI ---
+        function renderZoneList() {
+            const listDiv = document.getElementById('zone-list');
+            listDiv.innerHTML = '';
+            if (zones.length === 0) {
+                listDiv.innerHTML = '<p class="text-gray-500 text-center">Dibuje en el mapa para comenzar.</p>';
+                return;
+            }
+            zones.forEach((zone, index) => {
+                const item = document.createElement('div');
+                item.className = 'zone-item';
+                if (zone.id === selectedZoneId) {
+                    item.classList.add('active');
+                }
+                
+                const selectId = `soil-select-${zone.id}`;
+                item.innerHTML = `
+                    <div>
+                        <span class="font-bold">Ambiente ${index + 1}</span>
+                        <select id="${selectId}" data-zone-id="${zone.id}" class="form-select mt-1 text-sm">
+                            ${Object.entries(soilTypes).map(([key, name]) => `<option value="${key}" ${zone.soilType === key ? 'selected' : ''}>${name}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+                listDiv.appendChild(item);
+
+                document.getElementById(selectId).addEventListener('change', (e) => {
+                    const changedZone = zones.find(z => z.id === e.target.dataset.zoneId);
+                    if (changedZone) changedZone.soilType = e.target.value;
+                });
+            });
+        }
+        
+        // ... (resto de funciones de renderizado y lógica de UI)
+
+        // --- LÓGICA DE SIMULACIÓN ---
+        document.getElementById('startSimBtn').addEventListener('click', () => {
+             // 1. Recopilar todos los inputs del usuario
+            if (zones.length === 0) { alert("Por favor, defina al menos un ambiente en el mapa."); return; }
+            const chemicalKey = document.getElementById('agrochemical-selector').value;
+            if (!chemicalKey) { alert("Por favor, seleccione un agroquímico."); return; }
+
+            const scenario = {
+                chemicalKey: chemicalKey,
+                initialPsi: parseFloat(document.getElementById('initial-condition').value),
+                waterEvents: waterEvents.map(evt => ({
+                    ...evt,
+                    time: evt.time * 3600, // horas a segundos
+                    duration: (evt.amount / 10) * 3600 // Simplificación: 10 mm/h de infiltración
+                })),
+                appTime: parseFloat(document.getElementById('app-time').value) * 3600
+            };
+            
+            // 2. Iniciar el Worker
+            document.getElementById('loading-overlay').style.display = 'flex';
+            simulationResults = {};
+            initializeCharts();
+            
+            const workerBlob = new Blob([document.getElementById('simulation-worker').textContent], { type: "text/javascript" });
+            const worker = new Worker(window.URL.createObjectURL(workerBlob));
+            worker.postMessage({ zones, scenario });
+
+            worker.onmessage = function(e) {
+                const { type, text, zoneId, results, summary } = e.data;
+                if (type === 'progress') {
+                    document.getElementById('loading-text').textContent = text;
+                } else if (type === 'result') {
+                    simulationResults[zoneId] = { results, summary };
+                    updateRiskMapForZone(zoneId, summary.risk_value);
+                } else if (type === 'done') {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    worker.terminate();
+                }
+            };
+        });
+
+        // --- VISUALIZACIÓN DE RESULTADOS ---
+        function initializeCharts() { /* ... similar a la v1 ... */ }
+
+        function displayZoneResults(zoneId) {
+            selectedZoneId = zoneId;
+            renderZoneList(); // Para resaltar el activo
+            document.getElementById('charts-title').textContent = `Perfiles de Simulación (Ambiente ${zones.findIndex(z => z.id === zoneId) + 1})`;
+            document.getElementById('dashboard-subtitle').textContent = `Análisis detallado para el Ambiente ${zones.findIndex(z => z.id === zoneId) + 1}.`;
+
+            const data = simulationResults[zoneId];
+            if (!data) {
+                // Limpiar si no hay datos
+                return;
+            }
+
+            // Actualizar Dashboard
+            const summary = data.summary;
+            document.getElementById('summary-panel').innerHTML = `
+                <p><strong>Tipo de Suelo:</strong> ${soilTypes[summary.soilType]}</p>
+                <p><strong>Agroquímico:</strong> ${summary.soluteName}</p>
+                <p><strong>Factor de Retardación (R) calculado:</strong> ${summary.R.toFixed(2)}</p>
+                <hr class="my-2">
+                <p><strong>Profundidad máxima del pico de concentración:</strong> ${summary.peak_depth.toFixed(1)} cm</p>
+                <p class="font-bold text-lg mt-2">Nivel de Riesgo en el fondo del perfil (150cm): 
+                    <span style="color: ${getRiskColor(summary.risk_value)}">${getRiskText(summary.risk_value)}</span>
+                </p>
+            `;
+            
+            // Actualizar Gráficos
+            // ... (Lógica para poblar los gráficos con los datos de data.results)
+        }
+        
+        function getRiskColor(value) {
+            if (value > 0.1) return '#e53e3e'; // Rojo
+            if (value > 0.01) return '#ed8936'; // Naranja
+            return '#38a169'; // Verde
+        }
+        function getRiskText(value) {
+            if (value > 0.1) return 'Alto';
+            if (value > 0.01) return 'Moderado';
+            return 'Bajo';
+        }
+        function updateRiskMapForZone(zoneId, riskValue) {
+            const riskPolygon = riskPolygons[zoneId];
+            if (riskPolygon) {
+                riskPolygon.setOptions({ fillColor: getRiskColor(riskValue) });
+            }
+        }
+        
+        document.getElementById('addEventBtn').addEventListener('click', () => {
+            eventCounter++;
+            const item = document.createElement('div');
+            item.className = 'event-item';
+            item.id = `event-${eventCounter}`;
+            item.innerHTML = `
+                <div class="flex-grow grid grid-cols-2 gap-2">
+                    <input type="number" placeholder="mm" class="form-input text-sm amount" value="20">
+                    <input type="number" placeholder="horas" class="form-input text-sm time" value="${eventCounter * 6}">
+                </div>
+                <span class="remove-btn ml-4" data-id="${eventCounter}">✖</span>
+            `;
+            document.getElementById('event-list').appendChild(item);
+            updateWaterEventsArray();
+        });
+
+        document.getElementById('event-list').addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-btn')) {
+                document.getElementById(`event-${e.target.dataset.id}`).remove();
+                updateWaterEventsArray();
+            }
+        });
+         document.getElementById('event-list').addEventListener('change', updateWaterEventsArray);
+
+        function updateWaterEventsArray() {
+            waterEvents = [];
+            document.querySelectorAll('#event-list .event-item').forEach(item => {
+                const amount = item.querySelector('.amount').value;
+                const time = item.querySelector('.time').value;
+                if (amount && time) {
+                    waterEvents.push({ amount: parseFloat(amount), time: parseFloat(time) });
+                }
+            });
+        }
+        
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            zones.forEach(zone => zone.shape.setMap(null));
+            zones = [];
+            renderZoneList();
+            syncRiskMap();
+        });
+        
+        // Carga diferida de la API de Google Maps
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=TU_API_KEY_AQUI&libraries=drawing&callback=initMap`;
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+
+        // NOTA: Recuerda reemplazar 'TU_API_KEY_AQUI' con tu clave de API de Google Maps.
+        // El motor de simulación en el worker ha sido simplificado con un resultado predecible
+        // para fines de demostración de la interfaz. Un motor real tendría el solucionador numérico
+        // completo que discutimos previamente.
+    </script>
+</body>
+</html>

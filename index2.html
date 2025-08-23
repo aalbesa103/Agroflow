@@ -30,7 +30,17 @@
     </style>
 </head>
 <body>
-    <div id="loading-overlay" class="overlay"><div class="flex flex-col items-center"><div class="spinner"></div><p id="loading-text" class="text-white mt-4 text-lg">Iniciando...</p></div></div>
+<div id="loading-overlay" class="overlay">
+    <div class="flex flex-col items-center w-3/4 md:w-1/2">
+        <div class="spinner"></div>
+        <p id="loading-text" class="text-white mt-4 text-lg">Iniciando...</p>
+        
+        <div class="w-full bg-gray-500 rounded-full h-4 mt-4 overflow-hidden">
+            <div id="progress-bar" class="bg-green-400 h-full rounded-full text-xs text-center text-white transition-all duration-300 ease-linear" style="width: 0%;"></div>
+        </div>
+        <p id="progress-text" class="text-white mt-1 text-sm"></p>
+        </div>
+</div>
     <header><h1>AgroFlow v3.0</h1><p>Simulación Predictiva de Transporte por Ambientes</p></header>
     <main>
         <div class="pantalla" style="grid-column: 1 / -1;">
@@ -64,7 +74,6 @@
     </main>
 
 <script id="simulation-worker" type="javascript/worker">
-    // --- BASES DE DATOS Y FUNCIONES AUXILIARES (SIN CAMBIOS) ---
     const soilDatabase = {
         'arena': { theta_r: 0.045, theta_s: 0.43, alpha: 0.145, n: 2.68, K_s: 712.8, f_oc: 0.005, rho_b: 1.60 },
         'franco_arenoso': { theta_r: 0.065, theta_s: 0.41, alpha: 0.075, n: 1.89, K_s: 106.1, f_oc: 0.01, rho_b: 1.50 },
@@ -78,202 +87,226 @@
         'chlorpyrifos': { Koc: 6070, t_half_days: 30, name: 'Clorpirifos' },'imidacloprid': { Koc: 310, t_half_days: 100, name: 'Imidacloprid' },
         'nitrate': { Koc: 0.1, t_half_days: 1e6, name: 'Nitrato' },
     };
-    function calculate_solute_params(chemKey, soilParams) { /* ...código sin cambios... */ const chem = agrochemicalDatabase[chemKey]; const Kd = chem.Koc * soilParams.f_oc; const R = 1 + (soilParams.rho_b / soilParams.theta_s) * Kd; const mu = Math.log(2) / (chem.t_half_days * 24 * 3600); return { R, mu, name: chem.name }; }
-    function thomasAlgorithm(a,b,c,d){ /* ...código sin cambios... */ const n=d.length;let c_prime=new Array(n).fill(0);let d_prime=new Array(n).fill(0);let x=new Array(n).fill(0);c_prime[0]=c[0]/b[0];d_prime[0]=d[0]/b[0];for(let i=1;i<n;i++){const m=1/(b[i]-a[i-1]*c_prime[i-1]);c_prime[i]=c[i]*m;d_prime[i]=(d[i]-a[i-1]*d_prime[i-1])*m} x[n-1]=d_prime[n-1];for(let i=n-2;i>=0;i--){x[i]=d_prime[i]-c_prime[i]*x[i+1]}return x}
+    function calculate_solute_params(chemKey, soilParams) { const chem = agrochemicalDatabase[chemKey]; const Kd = chem.Koc * soilParams.f_oc; const R = 1 + (soilParams.rho_b / soilParams.theta_s) * Kd; const mu = Math.log(2) / (chem.t_half_days * 24 * 3600); return { R, mu, name: chem.name }; }
+    function thomasAlgorithm(a,b,c,d){const n=d.length;let c_prime=new Array(n).fill(0);let d_prime=new Array(n).fill(0);let x=new Array(n).fill(0);c_prime[0]=c[0]/b[0];d_prime[0]=d[0]/b[0];for(let i=1;i<n;i++){const m=1/(b[i]-a[i-1]*c_prime[i-1]);c_prime[i]=c[i]*m;d_prime[i]=(d[i]-a[i-1]*d_prime[i-1])*m} x[n-1]=d_prime[n-1];for(let i=n-2;i>=0;i--){x[i]=d_prime[i]-c_prime[i]*x[i+1]}return x}
     function calcular_theta(p,d){if(p>=0)return d.theta_s;const a=(1+Math.pow(d.alpha*Math.abs(p),d.n));return d.theta_r+(d.theta_s-d.theta_r)*Math.pow(a,-d.m)}
     function calcular_K(p,d){if(p>=0)return d.K_s;const a=calcular_theta(p,d);let t=(a-d.theta_r)/(d.theta_s-d.theta_r);t=Math.max(1e-10,Math.min(t,1));const e=1-Math.pow(1-Math.pow(t,1/d.m),d.m);return d.K_s*Math.pow(t,0.5)*Math.pow(e,2)}
     function calcular_C(p,d){if(p>=0)return 1e-9;const a=d.theta_s-d.theta_r;const t=d.m*d.n*d.alpha;const e=Math.pow(d.alpha*Math.abs(p),d.n-1);const o=Math.pow(1+Math.pow(d.alpha*Math.abs(p),d.n),-d.m-1);return a*t*e*o}
     
-    // --- FUNCIÓN DE SIMULACIÓN (CON OPTIMIZACIONES) ---
     function run_simulation_for_zone(zone) {
         const soilParamsRaw = soilDatabase[zone.soilType];
         const soilParams = { ...soilParamsRaw, K_s: soilParamsRaw.K_s / (24 * 3600), m: 1.0 - 1.0 / soilParamsRaw.n };
         const soluteParams = calculate_solute_params(zone.scenario.chemicalKey, soilParamsRaw);
         const { initialPsi, appTime, waterEvents } = zone.scenario;
-
         const L = 150.0, Nx = 76, dz = L / (Nx - 1);
         let h = new Array(Nx).fill(initialPsi); let C = new Array(Nx).fill(0.0);
-        
         let tiempo_total = 0.0; const T_final = 3600 * 48;
         let dt = 10.0, max_dt = 180.0, min_dt = 1.0;
         const plot_interval = 3600 * 4, max_iter_picard = 30, tol_picard = 5e-4;
         let time_to_plot = 0;
-        
-        // **AÑADIDO**: Un array para los perfiles de humedad (theta)
         const results = { h: [], C: [], theta: [], times: [], z_nodes: Array.from({length: Nx}, (_,i) => i*dz) };
-
         let K_m = new Array(Nx); let C_m = new Array(Nx);
+        let last_progress_sent = -1;
 
         while (tiempo_total < T_final) {
-            // ... (Lógica del bucle de Picard, sin cambios) ...
+            const current_progress = Math.floor((tiempo_total / T_final) * 100);
+            if (current_progress > last_progress_sent) {
+                self.postMessage({ type: 'simulation_progress', progress: current_progress });
+                last_progress_sent = current_progress;
+            }
             const h_n = [...h]; const C_n = [...C];
             let h_m = [...h]; let iter_count;
-            for (iter_count = 1; iter_count <= max_iter_picard; iter_count++) { /* ...código interno sin cambios... */ const h_prev_iter = [...h_m]; for (let i = 0; i < Nx; i++) { K_m[i] = calcular_K(h_m[i], soilParams); C_m[i] = calcular_C(h_m[i], soilParams); } const K_face=new Array(Nx-1).fill(0).map((_,i)=>(K_m[i]+K_m[i+1])/2); let h_top_bc=h_m[Nx-2]; let h_top_type="neumann"; const activeEvent=waterEvents.find(e=>tiempo_total>=e.time&&tiempo_total<e.time+e.duration); if(activeEvent){h_top_bc=0;h_top_type="dirichlet"} const A_lower=[],A_diag=[],A_upper=[],b=[]; for(let i=1;i<Nx-1;i++){const K_up=K_face[i];const K_down=K_face[i-1]; A_lower.push(-K_down/dz); A_diag.push(C_m[i]*dz/dt+K_up+K_down); A_upper.push(-K_up); b.push(C_m[i]*dz/dt*h_n[i]-(K_up-K_down))} const N=Nx-2; if(h_top_type==="dirichlet"){b[N-1]-=A_upper[N-1]*h_top_bc}else{A_diag[N-1]+=A_upper[N-1]} A_diag[0]+=A_lower[0]; const h_sol=thomasAlgorithm(A_lower.slice(1),A_diag,A_upper,b); h_m=[h_sol[0],...h_sol]; if(h_top_type==="dirichlet"){h_m.push(h_top_bc)}else{h_m.push(h_m[N])} h_m.reverse(); let error=Math.sqrt(h_m.reduce((s,v,i)=>s+Math.pow(v-h_prev_iter[i],2),0))/Nx; if(error<tol_picard)break; }
-
+            for (iter_count = 1; iter_count <= max_iter_picard; iter_count++) { const h_prev_iter = [...h_m]; for (let i = 0; i < Nx; i++) { K_m[i] = calcular_K(h_m[i], soilParams); C_m[i] = calcular_C(h_m[i], soilParams); } const K_face=new Array(Nx-1).fill(0).map((_,i)=>(K_m[i]+K_m[i+1])/2); let h_top_bc=h_m[Nx-2]; let h_top_type="neumann"; const activeEvent=waterEvents.find(e=>tiempo_total>=e.time&&tiempo_total<e.time+e.duration); if(activeEvent){h_top_bc=0;h_top_type="dirichlet"} const A_lower=[],A_diag=[],A_upper=[],b=[]; for(let i=1;i<Nx-1;i++){const K_up=K_face[i];const K_down=K_face[i-1]; A_lower.push(-K_down/dz); A_diag.push(C_m[i]*dz/dt+K_up+K_down); A_upper.push(-K_up); b.push(C_m[i]*dz/dt*h_n[i]-(K_up-K_down))} const N=Nx-2; if(h_top_type==="dirichlet"){b[N-1]-=A_upper[N-1]*h_top_bc}else{A_diag[N-1]+=A_upper[N-1]} A_diag[0]+=A_lower[0]; const h_sol=thomasAlgorithm(A_lower.slice(1),A_diag,A_upper,b); h_m=[h_sol[0],...h_sol]; if(h_top_type==="dirichlet"){h_m.push(h_top_bc)}else{h_m.push(h_m[N])} h_m.reverse(); let error=Math.sqrt(h_m.reduce((s,v,i)=>s+Math.pow(v-h_prev_iter[i],2),0))/Nx; if(error<tol_picard)break; }
             if(iter_count>max_iter_picard){dt=Math.max(min_dt,dt/2);h=[...h_n];continue}
             else{h=[...h_m];dt=Math.min(max_dt,dt*1.2)}
-            
-            // ... (Lógica de transporte de soluto, sin cambios) ...
             const theta=h.map(p=>calcular_theta(p,soilParams)); const K=h.map(p=>calcular_K(p,soilParams)); const q_face=new Array(Nx-1).fill(0).map((_,i)=>-(K[i]+K[i+1])/2*((h[i+1]-h[i])/dz-1)); const D_m=1e-5,alpha_L=1; const D_face=q_face.map((q,i)=>alpha_L*Math.abs(q/((theta[i]+theta[i+1])/2))+D_m); let C_top_bc=0; if(tiempo_total>=appTime&&tiempo_total<appTime+3600)C_top_bc=1; const AC_lower=[],AC_diag=[],AC_upper=[],bC=[]; const N=Nx-2; for(let i=1;i<Nx-1;i++){ const D_up=D_face[i]*theta[i+1]/dz; const D_down=D_face[i-1]*theta[i-1]/dz; const q_up=q_face[i]; const q_down=q_face[i-1]; AC_lower.push(q_down/2-D_down); AC_diag.push(theta[i]*dz*soluteParams.R/dt+(D_up+D_down)+(q_up-q_down)/2+theta[i]*dz*soluteParams.R*soluteParams.mu); AC_upper.push(-q_up/2-D_up); bC.push(theta[i]*dz*soluteParams.R/dt*C_n[i]); } bC[N-1]-=AC_upper[N-1]*C_top_bc; AC_diag[0]+=AC_lower[0]; const C_sol=thomasAlgorithm(AC_lower.slice(1),AC_diag,AC_upper,bC); C=[C_sol[0],...C_sol,C_top_bc];C.reverse();
-
             tiempo_total+=dt;
-            if(tiempo_total>=time_to_plot){
-                results.h.push([...h]);
-                results.C.push([...C]);
-                results.times.push(tiempo_total/3600);
-                // **AÑADIDO**: Guardar el perfil de humedad calculado
-                results.theta.push(theta); 
-                time_to_plot+=plot_interval;
-            }
+            if(tiempo_total>=time_to_plot){ results.h.push([...h]); results.C.push([...C]); results.theta.push(theta); results.times.push(tiempo_total/3600); time_to_plot+=plot_interval; }
         }
-        
         const final_C_profile=C;const risk_value=final_C_profile[0];
         const theta_final = h.map(p => calcular_theta(p, soilParams));
         const target_depth_nodes = Math.floor(100.0 / dz);
         const mass_leached = final_C_profile.reduce((s, v, i) => s + (i < target_depth_nodes ? v * theta_final[i] : 0), 0) * dz;
         const total_mass = final_C_profile.reduce((s, v, i) => s + v * theta_final[i], 0) * dz;
-        
         self.postMessage({
             type:"result",zoneId:zone.id,results,
             summary:{risk_value,soilType:zone.soilType,soluteName:soluteParams.name,
             leaching_percentage:total_mass>1e-6?(mass_leached/total_mass)*100:0}
         });
     }
-    self.onmessage=function(e){const{zones}=e.data;
-    zones.forEach((zone,index)=>{self.postMessage({type:"progress",text:`Simulando Ambiente ${index+1}/${zones.length}...`});
-    run_simulation_for_zone(zone)});self.postMessage({type:"done"})};
+
+    self.onmessage=function(e){
+        const{zones}=e.data;
+        zones.forEach((zone,index)=>{
+            self.postMessage({type:"progress",text:`Simulando Ambiente ${index + 1}/${zones.length}...`, zoneIndex: index, totalZones: zones.length});
+            run_simulation_for_zone(zone)
+        });
+        self.postMessage({type:"done"})
+    };
 </script>
 
 
+   <script>
+    let map, riskMap, drawingManager; let zones = [], riskPolygons = {};
+    let simulationResults = {}; let selectedZoneId = null; let nextEventId = 0;
+    const soilTypes = {'arena':'Arena','franco_arenoso':'Franco Arenoso','franco':'Franco','franco_limoso':'Franco Limoso','franco_arcilloso':'Franco Arcilloso','arcilla':'Arcilla'};
+    const charts = {};
 
-    <script>
-        // --- LÓGICA DE LA INTERFAZ (HILO PRINCIPAL) ---
-        let map, riskMap, drawingManager; let zones = [], riskPolygons = {};
-        let simulationResults = {}; let selectedZoneId = null; let nextEventId = 0;
-        const soilTypes = {'arena':'Arena','franco_arenoso':'Franco Arenoso','franco':'Franco','franco_limoso':'Franco Limoso','franco_arcilloso':'Franco Arcilloso','arcilla':'Arcilla'};
-        const charts = {};
-
-        function initMap() {
-            const initialCoords = { lat: -34.921, lng: -57.954 };
-            map = new google.maps.Map(document.getElementById('map'), { center: initialCoords, zoom: 14, mapTypeId: 'satellite' });
-            riskMap = new google.maps.Map(document.getElementById('risk-map-display'), { center: initialCoords, zoom: 14, mapTypeId: 'satellite', disableDefaultUI: true });
-            drawingManager = new google.maps.drawing.DrawingManager({
-                drawingMode: google.maps.drawing.OverlayType.POLYGON,
-                drawingControl: true, drawingControlOptions: { position: google.maps.ControlPosition.TOP_CENTER, drawingModes: ['polygon'] },
-                polygonOptions: { fillColor: '#4299e1', fillOpacity: 0.5, strokeWeight: 2, strokeColor: '#FFFFFF', editable: true, zIndex: 1 },
-            });
-            drawingManager.setMap(map);
-            google.maps.event.addListener(drawingManager, 'polygoncomplete', onPolygonComplete);
-        }
-        function onPolygonComplete(polygon) {
-            const id = `zone_${new Date().getTime()}`; polygon.id = id;
-            zones.push({ id, shape: polygon, soilType: 'franco', scenario: { initialPsi: -600, appTime: 1 * 3600, waterEvents: [] } });
-            google.maps.event.addListener(polygon.getPath(), 'set_at', () => syncRiskMap());
-            google.maps.event.addListener(polygon.getPath(), 'insert_at', () => syncRiskMap());
-            renderZoneList(); syncRiskMap(); drawingManager.setDrawingMode(null);
-        }
-        function syncRiskMap() {
-            Object.values(riskPolygons).forEach(p => p.setMap(null)); riskPolygons = {};
-            const bounds = new google.maps.LatLngBounds();
-            zones.forEach(zone => {
-                const path = zone.shape.getPath();
-                const riskPolygon = new google.maps.Polygon({ paths: path, strokeColor: '#FFFFFF', strokeOpacity: 0.8, strokeWeight: 2, fillColor: '#A0AEC0', fillOpacity: 0.6, map: riskMap });
-                riskPolygon.id = zone.id; google.maps.event.addListener(riskPolygon, 'click', () => displayZoneResults(zone.id));
-                riskPolygons[zone.id] = riskPolygon; path.getArray().forEach(latLng => bounds.extend(latLng));
-            });
-            if (!bounds.isEmpty()) { map.fitBounds(bounds); riskMap.fitBounds(bounds); }
-        }
-        function renderZoneList() {
-            const container = document.getElementById('zone-list-container'); container.innerHTML = '';
-            if (zones.length === 0) { container.innerHTML = '<p class="text-gray-500 text-center">Dibuje en el mapa para comenzar.</p>'; return; }
-            zones.forEach((zone, index) => {
-                const item = document.createElement('div'); item.className = 'zone-item'; item.id = `zone-item-${zone.id}`;
-                if (zone.id === selectedZoneId) item.classList.add('active');
-                item.innerHTML = `
-                    <div class="zone-header"><span class="font-bold">Ambiente ${index + 1}</span><select data-zone-id="${zone.id}" class="form-select text-sm w-1/2 soil-type">${Object.entries(soilTypes).map(([k, n]) => `<option value="${k}" ${zone.soilType===k?'selected':''}>${n}</option>`).join('')}</select></div>
-                    <div class="zone-body grid grid-cols-2 gap-4">
-                        <div><label class="form-label">Humedad Ini.:</label><select data-zone-id="${zone.id}" class="form-select text-sm initial-psi"><option value="-600" ${zone.scenario.initialPsi===-600?'selected':''}>Seco</option><option value="-150" ${zone.scenario.initialPsi===-150?'selected':''}>Húmedo</option><option value="-50" ${zone.scenario.initialPsi===-50?'selected':''}>Cap. Campo</option></select></div>
-                        <div><label class="form-label">Aplicación (h):</label><input type="number" value="${zone.scenario.appTime/3600}" data-zone-id="${zone.id}" class="form-input text-sm app-time" min="0"></div>
-                        <div class="col-span-2"><label class="form-label">Lluvia/Riego:</label><div class="event-list-local" id="event-list-${zone.id}"></div><button data-zone-id="${zone.id}" class="text-xs btn bg-blue-500 hover:bg-blue-600 mt-1 add-event-local">Agregar</button></div>
-                    </div>`;
-                container.appendChild(item);
-                renderLocalEvents(zone);
-            });
-            document.querySelectorAll('.soil-type, .initial-psi, .app-time').forEach(el => el.addEventListener('change', updateZoneData));
-            document.querySelectorAll('.add-event-local').forEach(el => el.addEventListener('click', addLocalEvent));
-        }
-        function updateZoneData(e) {
-            const zone = zones.find(z => z.id === e.target.dataset.zoneId); if (!zone) return;
-            const key = e.target.classList.contains('soil-type') ? 'soilType' : e.target.classList.contains('initial-psi') ? 'initialPsi' : 'appTime';
-            const value = e.target.classList.contains('app-time') ? parseFloat(e.target.value) * 3600 : e.target.classList.contains('initial-psi') ? parseFloat(e.target.value) : e.target.value;
-            if (key === 'soilType') zone.soilType = value; else zone.scenario[key] = value;
-        }
-        function addLocalEvent(e) {
-            const zoneId = e.target.dataset.zoneId; const zone = zones.find(z => z.id === zoneId); if (!zone) return;
-            zone.scenario.waterEvents.push({ id: `evt_${nextEventId++}`, amount: 20, time: (zone.scenario.waterEvents.length + 1) * 6 * 3600 });
-            renderLocalEvents(zone);
-        }
-        function renderLocalEvents(zone) {
-            const container = document.getElementById(`event-list-${zone.id}`); if(!container) return; container.innerHTML = '';
-            zone.scenario.waterEvents.forEach(evt => {
-                const item = document.createElement('div'); item.className = 'flex items-center gap-2 mt-1';
-                item.innerHTML = `<input type="number" value="${evt.amount}" data-event-id="${evt.id}" placeholder="mm" class="form-input text-sm event-amount w-1/2"><input type="number" value="${evt.time/3600}" data-event-id="${evt.id}" placeholder="horas" class="form-input text-sm event-time w-1/2"><span data-zone-id="${zone.id}" data-event-id="${evt.id}" class="text-red-500 cursor-pointer font-bold remove-event">✖</span>`;
-                container.appendChild(item);
-            });
-            document.querySelectorAll('.event-amount, .event-time').forEach(el => el.addEventListener('change', updateLocalEvent));
-            document.querySelectorAll('.remove-event').forEach(el => el.addEventListener('click', removeLocalEvent));
-        }
-        function updateLocalEvent(e) {
-            const { eventId } = e.target.dataset;
-            const zone = zones.find(z => z.scenario.waterEvents.some(evt => evt.id === eventId)); if(!zone) return;
-            const event = zone.scenario.waterEvents.find(evt => evt.id === eventId); if(!event) return;
-            if(e.target.classList.contains('event-amount')) event.amount = parseFloat(e.target.value);
-            if(e.target.classList.contains('event-time')) event.time = parseFloat(e.target.value) * 3600;
-        }
-        function removeLocalEvent(e) {
-            const { zoneId, eventId } = e.target.dataset; const zone = zones.find(z => z.id === zoneId); if (!zone) return;
-            zone.scenario.waterEvents = zone.scenario.waterEvents.filter(evt => evt.id !== eventId);
-            renderLocalEvents(zone);
-        }
-
-        document.getElementById('startSimBtn').addEventListener('click', () => {
-            if (zones.length === 0) { alert("Defina al menos un ambiente."); return; }
-            const chemicalKey = document.getElementById('agrochemical-selector').value;
-            if (!chemicalKey) { alert("Seleccione un agroquímico."); return; }
-            zones.forEach(z => z.scenario.chemicalKey = chemicalKey);
-            
-            document.getElementById('loading-overlay').style.display = 'flex';
-            document.getElementById('results-section').classList.remove('hidden'); document.getElementById('charts-section').classList.remove('hidden');
-            simulationResults = {}; initializeCharts(); let resultsCounter = 0;
-            
-            const workerBlob = new Blob([document.getElementById('simulation-worker').textContent.replace(/(\/\*([\s\S]*?)\*\/)|(\/\/(.*)$)/gm, '')], { type: "text/javascript" });
-            const worker = new Worker(window.URL.createObjectURL(workerBlob));
-            worker.postMessage({ zones });
-
-            worker.onmessage = function(e) {
-                const { type, text, zoneId, results, summary } = e.data;
-                if (type === 'progress') { document.getElementById('loading-text').textContent = text; }
-                else if (type === 'result') {
-                    resultsCounter++; simulationResults[zoneId] = { results, summary };
-                    updateRiskMapForZone(zoneId, summary.risk_value);
-                    if(resultsCounter === 1) displayZoneResults(zoneId); // Muestra el primero que llega
-                } else if (type === 'done') {
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    generateFinalRecommendation(); worker.terminate();
-                }
-            };
+    function initMap() {
+        const initialCoords = { lat: -34.921, lng: -57.954 };
+        map = new google.maps.Map(document.getElementById('map'), { center: initialCoords, zoom: 14, mapTypeId: 'satellite' });
+        riskMap = new google.maps.Map(document.getElementById('risk-map-display'), { center: initialCoords, zoom: 14, mapTypeId: 'satellite', disableDefaultUI: true });
+        drawingManager = new google.maps.drawing.DrawingManager({
+            drawingMode: google.maps.drawing.OverlayType.POLYGON,
+            drawingControl: true, drawingControlOptions: { position: google.maps.ControlPosition.TOP_CENTER, drawingModes: ['polygon'] },
+            polygonOptions: { fillColor: '#4299e1', fillOpacity: 0.5, strokeWeight: 2, strokeColor: '#FFFFFF', editable: true, zIndex: 1 },
         });
-    // **MODIFICADO**
+        drawingManager.setMap(map);
+        google.maps.event.addListener(drawingManager, 'polygoncomplete', onPolygonComplete);
+    }
+    function onPolygonComplete(polygon) {
+        const id = `zone_${new Date().getTime()}`; polygon.id = id;
+        zones.push({ id, shape: polygon, soilType: 'franco', scenario: { initialPsi: -600, appTime: 1 * 3600, waterEvents: [] } });
+        google.maps.event.addListener(polygon.getPath(), 'set_at', () => syncRiskMap());
+        google.maps.event.addListener(polygon.getPath(), 'insert_at', () => syncRiskMap());
+        renderZoneList(); syncRiskMap(); drawingManager.setDrawingMode(null);
+    }
+    function syncRiskMap() {
+        Object.values(riskPolygons).forEach(p => p.setMap(null)); riskPolygons = {};
+        const bounds = new google.maps.LatLngBounds();
+        zones.forEach(zone => {
+            const path = zone.shape.getPath();
+            const riskPolygon = new google.maps.Polygon({ paths: path, strokeColor: '#FFFFFF', strokeOpacity: 0.8, strokeWeight: 2, fillColor: '#A0AEC0', fillOpacity: 0.6, map: riskMap });
+            riskPolygon.id = zone.id; google.maps.event.addListener(riskPolygon, 'click', () => displayZoneResults(zone.id));
+            riskPolygons[zone.id] = riskPolygon; path.getArray().forEach(latLng => bounds.extend(latLng));
+        });
+        if (!bounds.isEmpty()) { map.fitBounds(bounds); riskMap.fitBounds(bounds); }
+    }
+    function renderZoneList() {
+        const container = document.getElementById('zone-list-container'); container.innerHTML = '';
+        if (zones.length === 0) { container.innerHTML = '<p class="text-gray-500 text-center">Dibuje en el mapa para comenzar.</p>'; return; }
+        zones.forEach((zone, index) => {
+            const item = document.createElement('div'); item.className = 'zone-item'; item.id = `zone-item-${zone.id}`;
+            if (zone.id === selectedZoneId) item.classList.add('active');
+            item.innerHTML = `
+                <div class="zone-header"><span class="font-bold">Ambiente ${index + 1}</span><select data-zone-id="${zone.id}" class="form-select text-sm w-1/2 soil-type">${Object.entries(soilTypes).map(([k, n]) => `<option value="${k}" ${zone.soilType===k?'selected':''}>${n}</option>`).join('')}</select></div>
+                <div class="zone-body grid grid-cols-2 gap-4">
+                    <div><label class="form-label">Humedad Ini.:</label><select data-zone-id="${zone.id}" class="form-select text-sm initial-psi"><option value="-600" ${zone.scenario.initialPsi===-600?'selected':''}>Seco</option><option value="-150" ${zone.scenario.initialPsi===-150?'selected':''}>Húmedo</option><option value="-50" ${zone.scenario.initialPsi===-50?'selected':''}>Cap. Campo</option></select></div>
+                    <div><label class="form-label">Aplicación (h):</label><input type="number" value="${zone.scenario.appTime/3600}" data-zone-id="${zone.id}" class="form-input text-sm app-time" min="0"></div>
+                    <div class="col-span-2"><label class="form-label">Lluvia/Riego:</label><div class="event-list-local" id="event-list-${zone.id}"></div><button data-zone-id="${zone.id}" class="text-xs btn bg-blue-500 hover:bg-blue-600 mt-1 add-event-local">Agregar</button></div>
+                </div>`;
+            container.appendChild(item);
+            renderLocalEvents(zone);
+        });
+        document.querySelectorAll('.soil-type, .initial-psi, .app-time').forEach(el => el.addEventListener('change', updateZoneData));
+        document.querySelectorAll('.add-event-local').forEach(el => el.addEventListener('click', addLocalEvent));
+    }
+    function updateZoneData(e) {
+        const zone = zones.find(z => z.id === e.target.dataset.zoneId); if (!zone) return;
+        const key = e.target.classList.contains('soil-type') ? 'soilType' : e.target.classList.contains('initial-psi') ? 'initialPsi' : 'appTime';
+        const value = e.target.classList.contains('app-time') ? parseFloat(e.target.value) * 3600 : e.target.classList.contains('initial-psi') ? parseFloat(e.target.value) : e.target.value;
+        if (key === 'soilType') zone.soilType = value; else zone.scenario[key] = value;
+    }
+    function addLocalEvent(e) {
+        const zoneId = e.target.dataset.zoneId; const zone = zones.find(z => z.id === zoneId); if (!zone) return;
+        zone.scenario.waterEvents.push({ id: `evt_${nextEventId++}`, amount: 20, time: (zone.scenario.waterEvents.length + 1) * 6 * 3600 });
+        renderLocalEvents(zone);
+    }
+    function renderLocalEvents(zone) {
+        const container = document.getElementById(`event-list-${zone.id}`); if(!container) return; container.innerHTML = '';
+        zone.scenario.waterEvents.forEach(evt => {
+            const item = document.createElement('div'); item.className = 'flex items-center gap-2 mt-1';
+            item.innerHTML = `<input type="number" value="${evt.amount}" data-event-id="${evt.id}" placeholder="mm" class="form-input text-sm event-amount w-1/2"><input type="number" value="${evt.time/3600}" data-event-id="${evt.id}" placeholder="horas" class="form-input text-sm event-time w-1/2"><span data-zone-id="${zone.id}" data-event-id="${evt.id}" class="text-red-500 cursor-pointer font-bold remove-event">✖</span>`;
+            container.appendChild(item);
+        });
+        document.querySelectorAll('.event-amount, .event-time').forEach(el => el.addEventListener('change', updateLocalEvent));
+        document.querySelectorAll('.remove-event').forEach(el => el.addEventListener('click', removeLocalEvent));
+    }
+    function updateLocalEvent(e) {
+        const { eventId } = e.target.dataset;
+        const zone = zones.find(z => z.scenario.waterEvents.some(evt => evt.id === eventId)); if(!zone) return;
+        const event = zone.scenario.waterEvents.find(evt => evt.id === eventId); if(!event) return;
+        if(e.target.classList.contains('event-amount')) event.amount = parseFloat(e.target.value);
+        if(e.target.classList.contains('event-time')) event.time = parseFloat(e.target.value) * 3600;
+    }
+    function removeLocalEvent(e) {
+        const { zoneId, eventId } = e.target.dataset; const zone = zones.find(z => z.id === zoneId); if (!zone) return;
+        zone.scenario.waterEvents = zone.scenario.waterEvents.filter(evt => evt.id !== eventId);
+        renderLocalEvents(zone);
+    }
+
+    document.getElementById('startSimBtn').addEventListener('click', () => {
+        if (zones.length === 0) { alert("Defina al menos un ambiente."); return; }
+        const chemicalKey = document.getElementById('agrochemical-selector').value;
+        if (!chemicalKey) { alert("Seleccione un agroquímico."); return; }
+        zones.forEach(z => z.scenario.chemicalKey = chemicalKey);
+        
+        document.getElementById('loading-overlay').style.display = 'flex';
+        document.getElementById('results-section').classList.add('hidden'); 
+        document.getElementById('charts-section').classList.add('hidden');
+        simulationResults = {}; 
+        initializeCharts(); 
+        let resultsCounter = 0;
+        
+        const workerBlob = new Blob([document.getElementById('simulation-worker').textContent.replace(/(\/\*([\s\S]*?)\*\/)|(\/\/(.*)$)/gm, '')], { type: "text/javascript" });
+        const worker = new Worker(window.URL.createObjectURL(workerBlob));
+        worker.postMessage({ zones });
+
+        let currentZoneIndex = 0;
+        let totalZones = zones.length;
+
+        worker.onmessage = function(e) {
+            const { type, text, zoneId, results, summary, progress, zoneIndex } = e.data;
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+
+            if (type === 'progress') {
+                document.getElementById('loading-text').textContent = text;
+                currentZoneIndex = zoneIndex;
+                const overallProgress = (currentZoneIndex / totalZones) * 100;
+                progressBar.style.width = `${overallProgress}%`;
+                progressText.textContent = `Progreso General: ${Math.floor(overallProgress)}%`;
+            } 
+            else if (type === 'simulation_progress') {
+                const progressWithinZone = progress / totalZones;
+                const progressCompletedZones = (currentZoneIndex / totalZones) * 100;
+                const overallProgress = progressCompletedZones + progressWithinZone;
+                
+                progressBar.style.width = `${overallProgress}%`;
+                progressBar.textContent = `${progress}%`;
+                progressText.textContent = `Progreso General: ${Math.floor(overallProgress)}%`;
+            }
+            else if (type === 'result') {
+                resultsCounter++; 
+                simulationResults[zoneId] = { results, summary };
+                updateRiskMapForZone(zoneId, summary.risk_value);
+                if(resultsCounter === 1) {
+                    document.getElementById('results-section').classList.remove('hidden');
+                    document.getElementById('charts-section').classList.remove('hidden');
+                    displayZoneResults(zoneId);
+                }
+            } else if (type === 'done') {
+                progressBar.style.width = `100%`;
+                progressBar.textContent = `100%`;
+                progressText.textContent = `Completado`;
+                setTimeout(() => {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                }, 500);
+                generateFinalRecommendation(); 
+                worker.terminate();
+            }
+        };
+    });
+    
     function initializeCharts() {
         ['pressure', 'moisture', 'solute'].forEach(type => { if(charts[type]) charts[type].destroy(); });
-        const createOptions=(label,lim=null)=>{const o={responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:label}},y:{title:{display:true,text:'Profundidad, z [cm]'},reverse:true}}};if(lim){o.scales.x.min=lim[0];o.scales.x.max=lim[1]}return o};
+        const createOptions=(label,lim=null)=>{const o={responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:label}},y:{title:{display:true,text:'Profundidad, z [cm]'},reverse:true, ticks: { stepSize: 20 } }}};if(lim){o.scales.x.min=lim[0];o.scales.x.max=lim[1]}return o};
         charts.pressure = new Chart(document.getElementById('pressure-chart'), {type:'line', data:{labels:[],datasets:[]}, options:createOptions('Carga de Presión, ψ [cm]')});
         charts.moisture = new Chart(document.getElementById('moisture-chart'), {type:'line', data:{labels:[],datasets:[]}, options:createOptions('Contenido de Humedad, θ', [0, 0.5])});
         charts.solute = new Chart(document.getElementById('solute-chart'), {type:'line', data:{labels:[],datasets:[]}, options:createOptions('Concentración Normalizada', [-0.1, 1.1])});
-        // Reactivar la visibilidad del gráfico de humedad por si se ocultó
         document.getElementById('moisture-chart').style.display = 'block';
     }
-    // **MODIFICADO**
+
     function displayZoneResults(zoneId) {
         selectedZoneId = zoneId; renderZoneList();
         const zoneIndex = zones.findIndex(z => z.id === zoneId) + 1;
@@ -289,7 +322,7 @@
         data.results.times.forEach((time, i) => {
             const color = colors[i % colors.length];
             const hProfile = data.results.h[i];
-            const thetaProfile = data.results.theta[i]; // Leer el perfil de humedad pre-calculado
+            const thetaProfile = data.results.theta[i];
             const CProfile = data.results.C[i];
             
             charts.pressure.data.datasets.push({label:`t=${time.toFixed(1)}h`,data:hProfile,borderColor:color,fill:false,pointRadius:0});
@@ -298,29 +331,29 @@
         });
         Object.values(charts).forEach(c => c.update('none'));
     }
+
     function getRiskColor(v){if(v>0.1)return'#e53e3e';if(v>0.01)return'#ed8936';return'#38a169'}
     function getRiskText(v){if(v>0.1)return'Alto';if(v>0.01)return'Moderado';return'Bajo'}
     function updateRiskMapForZone(zoneId,riskValue){const p=riskPolygons[zoneId];if(p)p.setOptions({fillColor:getRiskColor(riskValue)})}
-
-        function generateFinalRecommendation() {
-            const cont = document.getElementById('final-recommendation'); let s = { high: [], mod: [], low: [] };
-            zones.forEach((z, i) => {
-                const res = simulationResults[z.id]; if (!res) return;
-                const riskLvl = getRiskText(res.summary.risk_value);
-                const entry = { name: `Ambiente ${i + 1} (${soilTypes[res.summary.soilType]})`, leaching: res.summary.leaching_percentage.toFixed(1) };
-                if (riskLvl === 'Alto') s.high.push(entry); else if (riskLvl === 'Moderado') s.mod.push(entry); else s.low.push(entry);
-            });
-            let html = `<h3 class="font-bold text-lg mb-2">Síntesis General</h3><p class="mb-4">Simulación completada para ${zones.length} ambientes. Se detectó riesgo <strong>Alto</strong> en <strong>${s.high.length}</strong>, <strong>Moderado</strong> en <strong>${s.mod.length}</strong> y <strong>Bajo</strong> en <strong>${s.low.length}</strong>.</p>`;
-            if (s.high.length > 0) {html += `<div class="p-3 rounded-lg bg-red-100 border border-red-300 mb-3"><h4 class="font-bold text-red-800">🔴 Acción Recomendada para Zonas de Alto Riesgo</h4><p class="text-sm text-red-700 mt-1">Para los ambientes: <strong>${s.high.map(e => e.name).join(', ')}</strong>, se recomienda:</p><ul class="list-disc list-inside text-sm text-red-700 mt-1"><li><strong>No aplicar</strong> bajo las condiciones de lluvia/riego simuladas.</li><li>Considerar el uso de un producto alternativo con mayor adsorción (Koc más alto).</li><li>Retrasar la aplicación hasta un período sin pronóstico de lluvias intensas.</li><li>En estas zonas se estimó una pérdida por lixiviación (debajo de 100cm) de hasta <strong>${Math.max(...s.high.map(e=>parseFloat(e.leaching)))}%</strong>.</li></ul></div>`;}
-            if (s.mod.length > 0) {html += `<div class="p-3 rounded-lg bg-yellow-100 border border-yellow-300 mb-3"><h4 class="font-bold text-yellow-800">🟡 Precaución para Zonas de Riesgo Moderado</h4><p class="text-sm text-yellow-700 mt-1">En los ambientes: <strong>${s.mod.map(e => e.name).join(', ')}</strong>, considere reducir la dosis de aplicación o asegurar que no ocurran eventos hídricos adicionales a los planificados.</li></ul></div>`;}
-            if (s.low.length > 0) {html += `<div class="p-3 rounded-lg bg-green-100 border border-green-300"><h4 class="font-bold text-green-800">🟢 Aplicación Segura en Zonas de Bajo Riesgo</h4><p class="text-sm text-green-700 mt-1">La aplicación en los ambientes: <strong>${s.low.map(e => e.name).join(', ')}</strong> parece segura bajo las condiciones simuladas.</li></ul></div>`;}
-            cont.innerHTML = html;
-        }
-        
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCWnFvt9RuvfJT3ZkiqoNFJKNLxT_qLmSo&libraries=drawing&callback=initMap`;
-        script.async = true; script.defer = true;
-        document.head.appendChild(script);
-    </script>
+    function generateFinalRecommendation() {
+        const cont = document.getElementById('final-recommendation'); let s = { high: [], mod: [], low: [] };
+        zones.forEach((z, i) => {
+            const res = simulationResults[z.id]; if (!res) return;
+            const riskLvl = getRiskText(res.summary.risk_value);
+            const entry = { name: `Ambiente ${i + 1} (${soilTypes[res.summary.soilType]})`, leaching: res.summary.leaching_percentage.toFixed(1) };
+            if (riskLvl === 'Alto') s.high.push(entry); else if (riskLvl === 'Moderado') s.mod.push(entry); else s.low.push(entry);
+        });
+        let html = `<h3 class="font-bold text-lg mb-2">Síntesis General</h3><p class="mb-4">Simulación completada para ${zones.length} ambientes. Se detectó riesgo <strong>Alto</strong> en <strong>${s.high.length}</strong>, <strong>Moderado</strong> en <strong>${s.mod.length}</strong> y <strong>Bajo</strong> en <strong>${s.low.length}</strong>.</p>`;
+        if (s.high.length > 0) {html += `<div class="p-3 rounded-lg bg-red-100 border border-red-300 mb-3"><h4 class="font-bold text-red-800">🔴 Acción Recomendada para Zonas de Alto Riesgo</h4><p class="text-sm text-red-700 mt-1">Para los ambientes: <strong>${s.high.map(e => e.name).join(', ')}</strong>, se recomienda:</p><ul class="list-disc list-inside text-sm text-red-700 mt-1"><li><strong>No aplicar</strong> bajo las condiciones de lluvia/riego simuladas.</li><li>Considerar el uso de un producto alternativo con mayor adsorción (Koc más alto).</li><li>Retrasar la aplicación hasta un período sin pronóstico de lluvias intensas.</li><li>En estas zonas se estimó una pérdida por lixiviación (debajo de 100cm) de hasta <strong>${Math.max(...s.high.map(e=>parseFloat(e.leaching)))}%</strong>.</li></ul></div>`;}
+        if (s.mod.length > 0) {html += `<div class="p-3 rounded-lg bg-yellow-100 border border-yellow-300 mb-3"><h4 class="font-bold text-yellow-800">🟡 Precaución para Zonas de Riesgo Moderado</h4><p class="text-sm text-yellow-700 mt-1">En los ambientes: <strong>${s.mod.map(e => e.name).join(', ')}</strong>, considere reducir la dosis de aplicación o asegurar que no ocurran eventos hídricos adicionales a los planificados.</li></ul></div>`;}
+        if (s.low.length > 0) {html += `<div class="p-3 rounded-lg bg-green-100 border border-green-300"><h4 class="font-bold text-green-800">🟢 Aplicación Segura en Zonas de Bajo Riesgo</h4><p class="text-sm text-green-700 mt-1">La aplicación en los ambientes: <strong>${s.low.map(e => e.name).join(', ')}</strong> parece segura bajo las condiciones simuladas.</li></ul></div>`;}
+        cont.innerHTML = html;
+    }
+    
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyCWnFvt9RuvfJT3ZkiqoNFJKNLxT_qLmSo&libraries=drawing&callback=initMap`;
+    script.async = true; script.defer = true;
+    document.head.appendChild(script);
+</script>
 </body>
 </html>

@@ -98,7 +98,7 @@
         const soilParams = { ...soilParamsRaw, K_s: soilParamsRaw.K_s / (24 * 3600), m: 1.0 - 1.0 / soilParamsRaw.n };
         const soluteParams = calculate_solute_params(zone.scenario.chemicalKey, soilParamsRaw);
         const { initialPsi, appTime, waterEvents } = zone.scenario;
-        const L = 150.0, Nx = 76, dz = L / (Nx - 1);
+        const L = 150.0, Nx = 10, dz = L / (Nx - 1);
         let h = new Array(Nx).fill(initialPsi); let C = new Array(Nx).fill(0.0);
         let tiempo_total = 0.0; const T_final = 3600 * 48;
         let dt = 10.0, max_dt = 180.0, min_dt = 1.0;
